@@ -7,19 +7,9 @@ import google.generativeai as genai
 import re
 from io import BytesIO
 import os
+import platform
 from pdf2image import convert_from_bytes
-
-import shutil, streamlit as st, platform, subprocess
-
-st.write("OS:", platform.system(), platform.release())
-st.write("pdftoppm exists? ->", shutil.which("pdftoppm"))
-if shutil.which("pdftoppm"):
-    st.text(subprocess.run(["pdftoppm", "-v"], capture_output=True, text=True).stderr)
-
-
-# Windows 사용자: 아래 변수에 Poppler의 bin 폴더 경로를 직접 입력하세요.
-# 예시: r'C:\Users\username\poppler-0.68.0\bin'
-poppler_path = r"C:\Users\PC\Desktop\캠프\Release-25.07.0-0\poppler-25.07.0\Library\bin"
+import fitz  # PyMuPDF
 
 def setup_api_key():
     """
@@ -66,14 +56,12 @@ def parse_with_llm(image_data):
             """
         )
 
-        # Pass the image data to the API
         response = model.generate_content(
             [{"mime_type": "image/jpeg", "data": image_data}],
             generation_config=genai.types.GenerationConfig(
                 response_mime_type="application/json"
             )
         )
-        
         json_string = response.text
         json_string = re.sub(r'```json\s*|\s*```', '', json_string, flags=re.DOTALL)
         parsed_data = json.loads(json_string)
@@ -88,6 +76,26 @@ def parse_with_llm(image_data):
             "phone_number": None,
             "business_type": None
         }
+
+# ---------- PDF 처리 헬퍼 (poppler → 실패 시 PyMuPDF 폴백) ----------
+def pdf_to_images_robust(pdf_bytes: bytes, dpi: int = 300):
+    """
+    Try pdf2image (requires poppler-utils). If it fails, fall back to PyMuPDF.
+    """
+    # 1) pdf2image 시도 (poppler_path 절대 전달하지 않음)
+    try:
+        return convert_from_bytes(pdf_bytes, dpi=dpi)
+    except Exception as e:
+        st.warning(f"pdf2image 실패 → PyMuPDF로 재시도: {e}")
+        # 2) PyMuPDF fallback (외부 OS 패키지 없이 동작)
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        images = []
+        mat = fitz.Matrix(dpi/72, dpi/72)  # DPI 반영
+        for page in doc:
+            pix = page.get_pixmap(matrix=mat)
+            images.append(Image.open(BytesIO(pix.tobytes("png"))))
+        return images
+# -------------------------------------------------------------------
 
 # Streamlit page configuration
 st.set_page_config(page_title="영수증 OCR", layout="centered")
@@ -106,25 +114,23 @@ if api_key_set:
         if st.button("읽어오기", use_container_width=True):
             all_extracted_data = []
             progress_bar = st.progress(0, text="파일 처리 중...")
-            
+
             for i, uploaded_file in enumerate(uploaded_files):
                 file_extension = os.path.splitext(uploaded_file.name)[1].lower()
-                
+
                 with st.spinner(f"'{uploaded_file.name}' 파일 처리 중..."):
+                    # 업로드 바이트는 getvalue()가 가장 안전 (포인터 문제 예방)
                     file_bytes = uploaded_file.getvalue()
-                    
-                    # PDF는 이미지로 변환해서 처리해야 합니다.
+
                     if file_extension == ".pdf":
                         try:
-                            from pdf2image import convert_from_bytes
-                            images = convert_from_bytes(file_bytes, poppler_path=poppler_path)
-                            
-                            for image_obj in images:
+                            images = pdf_to_images_robust(file_bytes, dpi=300)
+                            for page_idx, image_obj in enumerate(images, start=1):
                                 image_bytes = BytesIO()
                                 image_obj.save(image_bytes, format='JPEG')
                                 parsed_info = parse_with_llm(image_bytes.getvalue())
                                 all_extracted_data.append({
-                                    "File Name": f"{uploaded_file.name} - Page {images.index(image_obj)+1}",
+                                    "File Name": f"{uploaded_file.name} - Page {page_idx}",
                                     "일시": parsed_info.get("date_time"),
                                     "상호명": parsed_info.get("company_name"),
                                     "사업자번호": parsed_info.get("business_number"),
@@ -148,21 +154,21 @@ if api_key_set:
                         })
 
                 progress_bar.progress((i + 1) / len(uploaded_files), text=f"진행 중: {i+1}/{len(uploaded_files)} 파일")
-            
+
             progress_bar.empty()
-            
+
             st.markdown("---")
-            
+
             if all_extracted_data:
                 df = pd.DataFrame(all_extracted_data)
-                
+
                 st.subheader("✅ 추출 완료")
                 st.dataframe(df, use_container_width=True)
 
                 csv_buffer = io.StringIO()
                 df.to_csv(csv_buffer, index=False, encoding='utf-8-sig')
                 csv_data = csv_buffer.getvalue().encode('utf-8-sig')
-                
+
                 st.download_button(
                     label="⬇️ CSV 파일로 다운로드",
                     data=csv_data,
@@ -170,6 +176,5 @@ if api_key_set:
                     mime='text/csv',
                     use_container_width=True
                 )
-        
-        st.button("🔄 다시 시작하기", on_click=lambda: st.rerun(), use_container_width=True)
 
+        st.button("🔄 다시 시작하기", on_click=lambda: st.rerun(), use_container_width=True)
