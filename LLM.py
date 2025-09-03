@@ -1,5 +1,3 @@
-# LLM.py  (Streamlit main)
-
 import streamlit as st
 from PIL import Image
 import pandas as pd
@@ -11,10 +9,14 @@ from io import BytesIO
 import os
 from pdf2image import convert_from_bytes
 
-# -------------------- Utils --------------------
+# Windows 사용자: 아래 변수에 Poppler의 bin 폴더 경로를 직접 입력하세요.
+# 예시: r'C:\Users\username\poppler-0.68.0\bin'
+poppler_path = r"C:\Users\PC\Desktop\캠프\Release-25.07.0-0\poppler-25.07.0\Library\bin"
 
 def setup_api_key():
-    """Sidebar에서 Gemini API 키 입력/설정"""
+    """
+    Sets up the API key from the user input.
+    """
     api_key = st.sidebar.text_input("Gemini API 키를 입력하세요.", type="password")
     if api_key:
         try:
@@ -25,51 +27,49 @@ def setup_api_key():
             return False
     return False
 
-
 @st.cache_data(show_spinner=False)
-def parse_with_llm(image_data: bytes):
+def parse_with_llm(image_data):
     """
-    Gemini로 영수증 정보 추출. image_data는 JPEG 바이트.
+    Uses the Gemini API to directly extract receipt information from an image.
     """
     try:
         model = genai.GenerativeModel(
-            model_name="gemini-1.5-flash-latest",
+            model_name='gemini-1.5-flash-latest',
             system_instruction="""
             You are a world-class receipt and invoice parser.
-            ONLY read the receipt itself; ignore background or other docs.
+            Your task is to extract specific information ONLY from the receipt part of the provided image.
+            **IMPORTANT:** The image might contain irrelevant information from the background or other documents. You must ignore all content that is not part of the main receipt. Focus exclusively on the structured receipt data.
 
-            Extract:
-            1) date_time
-            2) company_name
-            3) business_number (10 digits, e.g., XXX-XX-XXXXX or digits only)
-            4) address
-            5) phone_number
-            6) business_type
+            Extract the following fields accurately:
+            1.  **Date and Time (일시):** The date and time of the transaction. Look for patterns like YYYY.MM.DD, YYYY-MM-DD, or MM/DD/YYYY and time formats like HH:MM. If both are found, combine them.
+            2.  **Company Name (상호명):** The name of the business or store. It is crucial to get this field correct. Be very careful with this and try to infer the correct name from partial or misspelled words. Also, consider the name that appears most prominently at the top of the document.
+            3.  **Business Number (사업자번호):** The 10-digit business registration number, often in the format XXX-XX-XXXXX.
+            4.  **Address (주소):** The street address of the business.
+            5.  **Phone Number (전화번호):** The phone number of the business.
+            6.  **Business Type (업종):** Infer the type of business from the company name, items purchased, or other context in the text. (e.g., Restaurant, Cafe, Retail, etc.).
 
-            Output strict JSON with these keys. Use null when missing.
+            The final output must be a JSON object with the following keys. If a piece of data is not found, use `null`.
+            - `date_time` (string)
+            - `company_name` (string)
+            - `business_number` (string)
+            - `address` (string)
+            - `phone_number` (string)
+            - `business_type` (string)
             """
         )
 
-        resp = model.generate_content(
+        # Pass the image data to the API
+        response = model.generate_content(
             [{"mime_type": "image/jpeg", "data": image_data}],
             generation_config=genai.types.GenerationConfig(
                 response_mime_type="application/json"
             )
         )
-
-        json_string = resp.text or "{}"
-        # 코드펜스 제거 대응
+        
+        json_string = response.text
         json_string = re.sub(r'```json\s*|\s*```', '', json_string, flags=re.DOTALL)
-        parsed = json.loads(json_string)
-        # 키 누락 방지
-        return {
-            "date_time": parsed.get("date_time"),
-            "company_name": parsed.get("company_name"),
-            "business_number": parsed.get("business_number"),
-            "address": parsed.get("address"),
-            "phone_number": parsed.get("phone_number"),
-            "business_type": parsed.get("business_type"),
-        }
+        parsed_data = json.loads(json_string)
+        return parsed_data
     except Exception as e:
         st.error(f"언어 모델 API 호출 중 오류 발생: {e}")
         return {
@@ -78,28 +78,13 @@ def parse_with_llm(image_data: bytes):
             "business_number": None,
             "address": None,
             "phone_number": None,
-            "business_type": None,
+            "business_type": None
         }
 
-
-def pdf_to_images(pdf_bytes: bytes, dpi: int = 300):
-    """
-    PDF → PIL.Image 리스트
-    - 배포 환경(리눅스)에선 poppler-utils가 PATH에 설치되어 있어야 하며
-      convert_from_bytes에 poppler_path를 절대 전달하지 않습니다.
-    """
-    return convert_from_bytes(pdf_bytes, dpi=dpi)
-
-
-def pil_image_to_jpeg_bytes(img: Image.Image) -> bytes:
-    buf = BytesIO()
-    img.save(buf, format="JPEG")
-    return buf.getvalue()
-
-
-# -------------------- App --------------------
-
+# Streamlit page configuration
 st.set_page_config(page_title="영수증 OCR", layout="centered")
+
+# --- UI Layout Start ---
 st.title("📄 영수증 OCR 텍스트 추출기")
 st.markdown("---")
 st.write("JPG, PNG, PDF 파일을 여러 개 업로드하면 영수증 정보를 추출하고 CSV 파일로 다운로드할 수 있습니다.")
@@ -107,68 +92,75 @@ st.write("JPG, PNG, PDF 파일을 여러 개 업로드하면 영수증 정보를
 api_key_set = setup_api_key()
 
 if api_key_set:
-    uploaded_files = st.file_uploader(
-        "파일을 선택하세요",
-        type=["jpg", "jpeg", "png", "pdf"],
-        accept_multiple_files=True
-    )
+    uploaded_files = st.file_uploader("파일을 선택하세요", type=["jpg", "jpeg", "png", "pdf"], accept_multiple_files=True)
 
     if uploaded_files:
         if st.button("읽어오기", use_container_width=True):
-            all_rows = []
-            progress = st.progress(0, text="파일 처리 중...")
+            all_extracted_data = []
+            progress_bar = st.progress(0, text="파일 처리 중...")
+            
+            for i, uploaded_file in enumerate(uploaded_files):
+                file_extension = os.path.splitext(uploaded_file.name)[1].lower()
+                
+                with st.spinner(f"'{uploaded_file.name}' 파일 처리 중..."):
+                    file_bytes = uploaded_file.getvalue()
+                    
+                    # PDF는 이미지로 변환해서 처리해야 합니다.
+                    if file_extension == ".pdf":
+                        try:
+                            from pdf2image import convert_from_bytes
+                            images = convert_from_bytes(file_bytes, poppler_path=poppler_path)
+                            
+                            for image_obj in images:
+                                image_bytes = BytesIO()
+                                image_obj.save(image_bytes, format='JPEG')
+                                parsed_info = parse_with_llm(image_bytes.getvalue())
+                                all_extracted_data.append({
+                                    "File Name": f"{uploaded_file.name} - Page {images.index(image_obj)+1}",
+                                    "일시": parsed_info.get("date_time"),
+                                    "상호명": parsed_info.get("company_name"),
+                                    "사업자번호": parsed_info.get("business_number"),
+                                    "주소": parsed_info.get("address"),
+                                    "전화번호": parsed_info.get("phone_number"),
+                                    "업종": parsed_info.get("business_type")
+                                })
+                        except Exception as e:
+                            st.error(f"PDF 파일 처리 중 오류 발생: {e}")
+                            continue
+                    else:
+                        parsed_info = parse_with_llm(file_bytes)
+                        all_extracted_data.append({
+                            "File Name": uploaded_file.name,
+                            "일시": parsed_info.get("date_time"),
+                            "상호명": parsed_info.get("company_name"),
+                            "사업자번호": parsed_info.get("business_number"),
+                            "주소": parsed_info.get("address"),
+                            "전화번호": parsed_info.get("phone_number"),
+                            "업종": parsed_info.get("business_type")
+                        })
 
-            for idx, uf in enumerate(uploaded_files, start=1):
-                ext = os.path.splitext(uf.name)[1].lower()
-
-                with st.spinner(f"'{uf.name}' 처리 중..."):
-                    # 업로드 바이트 확보 (포인터 문제 방지)
-                    file_bytes = uf.getvalue()
-
-                    try:
-                        images = []
-                        if ext == ".pdf":
-                            images = pdf_to_images(file_bytes, dpi=300)
-                        else:
-                            # 단일 이미지도 리스트 처리로 통일
-                            images = [Image.open(BytesIO(file_bytes))]
-
-                        # 각 페이지/이미지별 LLM 파싱
-                        for p, img in enumerate(images, start=1):
-                            jpeg_bytes = pil_image_to_jpeg_bytes(img.convert("RGB"))
-                            parsed = parse_with_llm(jpeg_bytes)
-
-                            all_rows.append({
-                                "File Name": uf.name if len(images) == 1 else f"{uf.name} - Page {p}",
-                                "일시": parsed.get("date_time"),
-                                "상호명": parsed.get("company_name"),
-                                "사업자번호": parsed.get("business_number"),
-                                "주소": parsed.get("address"),
-                                "전화번호": parsed.get("phone_number"),
-                                "업종": parsed.get("business_type"),
-                            })
-
-                    except Exception as e:
-                        st.error(f"파일 처리 중 오류: {uf.name} — {e}")
-
-                progress.progress(idx / len(uploaded_files), text=f"진행 중: {idx}/{len(uploaded_files)} 파일")
-
-            progress.empty()
+                progress_bar.progress((i + 1) / len(uploaded_files), text=f"진행 중: {i+1}/{len(uploaded_files)} 파일")
+            
+            progress_bar.empty()
+            
             st.markdown("---")
-
-            if all_rows:
-                df = pd.DataFrame(all_rows)
+            
+            if all_extracted_data:
+                df = pd.DataFrame(all_extracted_data)
+                
                 st.subheader("✅ 추출 완료")
                 st.dataframe(df, use_container_width=True)
 
-                csv_io = io.StringIO()
-                df.to_csv(csv_io, index=False, encoding="utf-8-sig")
+                csv_buffer = io.StringIO()
+                df.to_csv(csv_buffer, index=False, encoding='utf-8-sig')
+                csv_data = csv_buffer.getvalue().encode('utf-8-sig')
+                
                 st.download_button(
-                    "⬇️ CSV 파일로 다운로드",
-                    data=csv_io.getvalue().encode("utf-8-sig"),
-                    file_name="extracted_receipt_data.csv",
-                    mime="text/csv",
+                    label="⬇️ CSV 파일로 다운로드",
+                    data=csv_data,
+                    file_name='extracted_receipt_data.csv',
+                    mime='text/csv',
                     use_container_width=True
                 )
-
+        
         st.button("🔄 다시 시작하기", on_click=lambda: st.rerun(), use_container_width=True)
