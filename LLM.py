@@ -178,3 +178,4 @@ if api_key_set:
                 )
 
         st.button("🔄 다시 시작하기", on_click=lambda: st.rerun(), use_container_width=True)
+
