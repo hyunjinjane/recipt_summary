@@ -9,16 +9,25 @@ from io import BytesIO
 import os
 from pdf2image import convert_from_bytes, exceptions
 
-# Streamlit secrets에서 Gemini API 키를 가져와 설정합니다.
-# 이렇게 하면 API 키가 노출되지 않아 안전합니다.
-try:
-    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-except KeyError:
-    st.error("Gemini API 키가 설정되지 않았습니다. Streamlit Cloud의 Secrets에 'GEMINI_API_KEY'를 추가해 주세요.")
-    st.stop()
-except Exception as e:
-    st.error(f"유효하지 않은 API 키입니다. 다시 확인해 주세요: {e}")
-    st.stop()
+# Windows 사용자: 아래 변수에 Poppler의 bin 폴더 경로를 직접 입력하세요.
+# 예시: r'C:\Users\username\poppler-0.68.0\bin'
+poppler_path = r"C:\Users\PC\Desktop\캠프\Release-25.07.0-0\poppler-25.07.0\Library\bin"
+
+
+def setup_api_key():
+    """
+    Sets up the API key from the user input.
+    """
+    api_key = st.sidebar.text_input("Gemini API 키를 입력하세요.", type="password")
+    if api_key:
+        try:
+            genai.configure(api_key=api_key)
+            return True
+        except Exception as e:
+            st.error(f"유효하지 않은 API 키입니다. 다시 확인해 주세요: {e}")
+            return False
+    st.info("왼쪽 사이드바에 Gemini API 키를 입력해주세요.")
+    return False
 
 @st.cache_data(show_spinner=False)
 def parse_with_llm(image_data):
@@ -82,54 +91,57 @@ st.title("📄 영수증 OCR 텍스트 추출기")
 st.markdown("---")
 st.write("JPG, PNG, PDF 파일을 여러 개 업로드하면 영수증 정보를 추출하고 CSV 파일로 다운로드할 수 있습니다.")
 
-uploaded_files = st.file_uploader("파일을 선택하세요", type=["jpg", "jpeg", "png", "pdf"], accept_multiple_files=True)
+api_key_set = setup_api_key()
 
-if uploaded_files:
-    if st.button("읽어오기", use_container_width=True):
-        all_extracted_data = []
-        progress_bar = st.progress(0, text="파일 처리 중...")
-        
-        for i, uploaded_file in enumerate(uploaded_files):
-            file_extension = os.path.splitext(uploaded_file.name)[1].lower()
+if api_key_set:
+    uploaded_files = st.file_uploader("파일을 선택하세요", type=["jpg", "jpeg", "png", "pdf"], accept_multiple_files=True)
+
+    if uploaded_files:
+        if st.button("읽어오기", use_container_width=True):
+            all_extracted_data = []
+            progress_bar = st.progress(0, text="파일 처리 중...")
             
-            with st.spinner(f"'{uploaded_file.name}' 파일 처리 중..."):
-                file_bytes = uploaded_file.getvalue()
+            for i, uploaded_file in enumerate(uploaded_files):
+                file_extension = os.path.splitext(uploaded_file.name)[1].lower()
                 
-                # PDF는 이미지로 변환해서 처리해야 합니다.
-                if file_extension == ".pdf":
-                    try:
-                        images = convert_from_bytes(file_bytes)
-                        
-                        for image_obj in images:
-                            image_bytes = BytesIO()
-                            image_obj.save(image_bytes, format='JPEG')
-                            parsed_info = parse_with_llm(image_bytes.getvalue())
-                            all_extracted_data.append({
-                                "File Name": f"{uploaded_file.name} - Page {images.index(image_obj)+1}",
-                                "일시": parsed_info.get("date_time"),
-                                "상호명": parsed_info.get("company_name"),
-                                "사업자번호": parsed_info.get("business_number"),
-                                "주소": parsed_info.get("address"),
-                                "전화번호": parsed_info.get("phone_number"),
-                                "업종": parsed_info.get("business_type")
-                            })
-                    except exceptions.PopplerNotInstalledError:
-                        st.error("Streamlit Cloud 서버에 Poppler가 설치되지 않았습니다. packages.txt 파일에 poppler-utils를 추가해 주세요.")
-                        st.stop()
-                    except Exception as e:
-                        st.error(f"PDF 파일 처리 중 오류 발생: {e}")
-                        continue
-                else:
-                    parsed_info = parse_with_llm(file_bytes)
-                    all_extracted_data.append({
-                        "File Name": uploaded_file.name,
-                        "일시": parsed_info.get("date_time"),
-                        "상호명": parsed_info.get("company_name"),
-                        "사업자번호": parsed_info.get("business_number"),
-                        "주소": parsed_info.get("address"),
-                        "전화번호": parsed_info.get("phone_number"),
-                        "업종": parsed_info.get("business_type")
-                    })
+                with st.spinner(f"'{uploaded_file.name}' 파일 처리 중..."):
+                    file_bytes = uploaded_file.getvalue()
+                    
+                    # PDF는 이미지로 변환해서 처리해야 합니다.
+                    if file_extension == ".pdf":
+                        try:
+                            images = convert_from_bytes(file_bytes, poppler_path=poppler_path)
+                            
+                            for image_obj in images:
+                                image_bytes = BytesIO()
+                                image_obj.save(image_bytes, format='JPEG')
+                                parsed_info = parse_with_llm(image_bytes.getvalue())
+                                all_extracted_data.append({
+                                    "File Name": f"{uploaded_file.name} - Page {images.index(image_obj)+1}",
+                                    "일시": parsed_info.get("date_time"),
+                                    "상호명": parsed_info.get("company_name"),
+                                    "사업자번호": parsed_info.get("business_number"),
+                                    "주소": parsed_info.get("address"),
+                                    "전화번호": parsed_info.get("phone_number"),
+                                    "업종": parsed_info.get("business_type")
+                                })
+                        except exceptions.PopplerNotInstalledError:
+                            st.error("Poppler가 설치되지 않았습니다. Windows 사용자는 Poppler를 설치하고 poppler_path 변수를 올바르게 설정해야 합니다.")
+                            st.stop()
+                        except Exception as e:
+                            st.error(f"PDF 파일 처리 중 오류 발생: {e}")
+                            continue
+                    else:
+                        parsed_info = parse_with_llm(file_bytes)
+                        all_extracted_data.append({
+                            "File Name": uploaded_file.name,
+                            "일시": parsed_info.get("date_time"),
+                            "상호명": parsed_info.get("company_name"),
+                            "사업자번호": parsed_info.get("business_number"),
+                            "주소": parsed_info.get("address"),
+                            "전화번호": parsed_info.get("phone_number"),
+                            "업종": parsed_info.get("business_type")
+                        })
 
             progress_bar.progress((i + 1) / len(uploaded_files), text=f"진행 중: {i+1}/{len(uploaded_files)} 파일")
         
@@ -152,7 +164,7 @@ if uploaded_files:
                 data=csv_data,
                 file_name='extracted_receipt_data.csv',
                 mime='text/csv',
-                use_container_container_width=True
+                use_container_width=True
             )
         
 st.button("🔄 다시 시작하기", on_click=lambda: st.rerun(), use_container_width=True)
