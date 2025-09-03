@@ -3,6 +3,8 @@ google-generativeai
 pandas
 Pillow
 pdf2image
+pymupdf==1.24.9
+
 
 
 
