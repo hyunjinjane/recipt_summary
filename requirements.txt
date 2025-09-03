@@ -3,4 +3,5 @@ google-generativeai
 pandas
 Pillow
 pdf2image
+poppler-utils
 
