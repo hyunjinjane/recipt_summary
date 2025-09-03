@@ -9,10 +9,10 @@ from io import BytesIO
 import os
 from pdf2image import convert_from_bytes, exceptions
 
-# Windows 사용자: 아래 변수에 Poppler의 bin 폴더 경로를 직접 입력하세요.
-# 예시: r'C:\Users\username\poppler-0.68.0\bin'
-poppler_path = r"C:\Users\PC\Desktop\캠프\Release-25.07.0-0\poppler-25.07.0\Library\bin"
-
+# 이 변수는 Streamlit Cloud 배포 시 필요하지 않습니다.
+# Streamlit Cloud는 packages.txt를 통해 Poppler를 자동으로 설치합니다.
+# 로컬 테스트가 필요하면 주석을 해제하고 경로를 지정하세요.
+# poppler_path = r"C:\Users\PC\Desktop\캠프\Release-25.07.0-0\poppler-25.07.0\Library\bin"
 
 def setup_api_key():
     """
@@ -110,7 +110,9 @@ if api_key_set:
                     # PDF는 이미지로 변환해서 처리해야 합니다.
                     if file_extension == ".pdf":
                         try:
-                            images = convert_from_bytes(file_bytes, poppler_path=poppler_path)
+                            # Streamlit Cloud에서는 poppler_path를 지정할 필요가 없습니다.
+                            # packages.txt를 통해 Poppler가 자동으로 설치됩니다.
+                            images = convert_from_bytes(file_bytes)
                             
                             for image_obj in images:
                                 image_bytes = BytesIO()
@@ -126,7 +128,7 @@ if api_key_set:
                                     "업종": parsed_info.get("business_type")
                                 })
                         except exceptions.PopplerNotInstalledError:
-                            st.error("Poppler가 설치되지 않았습니다. Windows 사용자는 Poppler를 설치하고 poppler_path 변수를 올바르게 설정해야 합니다.")
+                            st.error("Poppler가 설치되지 않았습니다. Streamlit Cloud에 packages.txt 파일이 있는지 확인해 주세요.")
                             st.stop()
                         except Exception as e:
                             st.error(f"PDF 파일 처리 중 오류 발생: {e}")
