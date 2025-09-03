@@ -1,0 +1,8 @@
+streamlit
+google-generativeai
+pillow
+pandas
+numpy
+# OCR/컴퓨터비전 쓰면:
+opencv-python-headless
+pytesseract
