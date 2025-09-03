@@ -96,6 +96,9 @@ api_key_set = setup_api_key()
 if api_key_set:
     uploaded_files = st.file_uploader("파일을 선택하세요", type=["jpg", "jpeg", "png", "pdf"], accept_multiple_files=True)
 
+    # all_extracted_data를 미리 초기화하여 NameError를 방지합니다.
+    all_extracted_data = []
+
     if uploaded_files:
         if st.button("읽어오기", use_container_width=True):
             all_extracted_data = []
