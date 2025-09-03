@@ -146,8 +146,7 @@ if api_key_set:
                         })
 
             progress_bar.progress((i + 1) / len(uploaded_files), text=f"진행 중: {i+1}/{len(uploaded_files)} 파일")
-        
-        progress_bar.empty()
+            progress_bar.empty()
         
         st.markdown("---")
         
