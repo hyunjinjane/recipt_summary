@@ -9,6 +9,14 @@ from io import BytesIO
 import os
 from pdf2image import convert_from_bytes
 
+import shutil, streamlit as st, platform, subprocess
+
+st.write("OS:", platform.system(), platform.release())
+st.write("pdftoppm exists? ->", shutil.which("pdftoppm"))
+if shutil.which("pdftoppm"):
+    st.text(subprocess.run(["pdftoppm", "-v"], capture_output=True, text=True).stderr)
+
+
 # Windows 사용자: 아래 변수에 Poppler의 bin 폴더 경로를 직접 입력하세요.
 # 예시: r'C:\Users\username\poppler-0.68.0\bin'
 poppler_path = r"C:\Users\PC\Desktop\캠프\Release-25.07.0-0\poppler-25.07.0\Library\bin"
@@ -164,3 +172,4 @@ if api_key_set:
                 )
         
         st.button("🔄 다시 시작하기", on_click=lambda: st.rerun(), use_container_width=True)
+
