@@ -152,28 +152,7 @@ if uploaded_files:
                 data=csv_data,
                 file_name='extracted_receipt_data.csv',
                 mime='text/csv',
-                use_container_width=True
+                use_container_container_width=True
             )
         
 st.button("🔄 다시 시작하기", on_click=lambda: st.rerun(), use_container_width=True)
-```
-eof
-
----
-
-이제 이 코드를 GitHub 레포지토리의 `app.py` 파일에 복사하세요.
-
-Streamlit Cloud에 배포하기 전에 다음 두 파일을 반드시 생성해야 합니다.
-
-1.  `requirements.txt`
-    ```
-    streamlit
-    google-generativeai
-    pandas
-    Pillow
-    pdf2image
-    ```
-2.  `packages.txt`
-    ```
-    poppler-utils
-    
